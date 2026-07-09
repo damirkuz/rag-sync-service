@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: rag_sync
+      POSTGRES_USER: rag_sync
+      POSTGRES_PASSWORD: rag_sync
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag_sync -d rag_sync"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rag-sync-service:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      RAG_SYNC_DB_URL: jdbc:postgresql://postgres:5432/rag_sync
+      RAG_SYNC_DB_USERNAME: rag_sync
+      RAG_SYNC_DB_PASSWORD: rag_sync
+      RAG_SYNC_API_TOKEN: local-dev-token
+    ports:
+      - "8080:8080"

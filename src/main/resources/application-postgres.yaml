@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: ${RAG_SYNC_DB_URL:jdbc:postgresql://localhost:5432/rag_sync}
+    username: ${RAG_SYNC_DB_USERNAME:rag_sync}
+    password: ${RAG_SYNC_DB_PASSWORD:rag_sync}
+    driver-class-name: org.postgresql.Driver
+
+rag-sync:
+  api-token: ${RAG_SYNC_API_TOKEN:change-me}
