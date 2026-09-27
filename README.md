@@ -7,6 +7,17 @@
 
 Изначально репозиторий был единым Gradle-проектом, поэтому сервис расположен в корне, а не во вложенной и избыточной директории `rag-sync-service/`. Здесь намеренно нет настоящих интеграций с Git-провайдером, RAG-платформой, корпоративных URL, токенов или agent skill. `StubGitProviderClient` и `StubRagPlatformClient` — безопасные заменители.
 
+## Возможности
+
+- **Асинхронная обработка событий Git.** Контроллер `POST /api/v1/rag-sync/events/git` принимает событие о commit'е, сохраняет job со статусом `PENDING` и сразу отвечает `202 Accepted`; тяжёлая синхронизация выполняется фоновым worker'ом.
+- **Фоновый worker.** Планировщик с настраиваемым интервалом забирает pending-job пачками, сравнивает Markdown через `GitProviderClient` и приводит RAG-индекс в соответствие (добавление, обновление, удаление документов).
+- **Reconcile.** Полная сверка репозитория с индексом через `POST /api/v1/rag-sync/reconcile` — восстановление согласованности после сбоев.
+- **Идемпотентность и дедупликация.** SHA-256 хеш нормализованного содержимого (`ContentHashService`) и стабильный doc_id (`projectPath:branch:path` либо `doc_id` из front matter) позволяют не переиндексировать неизменившиеся документы.
+- **Аудит состояния.** Flyway-миграции создают таблицы job, документов, репозиториев и состояния синхронизации; `last_successful_commit_sha` обновляется только после полностью успешной job.
+- **Токенная авторизация API.** Фильтр проверяет заголовок `X-Rag-Sync-Token` для всех маршрутов `/api/v1/rag-sync/`.
+- **Pre-commit hook.** Локальный hook анализирует staged-файлы, запускает настраиваемый генератор документации и прерывает commit, если тот изменил `docs/**/*.md`.
+- **Профили запуска.** H2 in-memory для разработки, PostgreSQL 16 через Docker Compose — для dev-стека.
+
 ## Как это работает
 
 1. Разработчик меняет исходный код и делает `git commit`.
@@ -44,6 +55,33 @@ RAG_DOCS_GENERATE_COMMAND='git-hooks/scripts/rag-docs/generate-rag-docs.example.
 ```bash
 ./gradlew bootJar
 docker compose up --build
+```
+
+Для запуска на PostgreSQL без Docker Compose задайте переменные окружения и включите профиль:
+
+```bash
+RAG_SYNC_DB_URL=... RAG_SYNC_DB_USERNAME=... RAG_SYNC_DB_PASSWORD=... RAG_SYNC_API_TOKEN=... \
+  ./gradlew bootRun --args='--spring.profiles.active=postgres'
+```
+
+Проверить статус job можно по `GET /api/v1/rag-sync/jobs/{jobId}`. Для запуска тестов:
+
+```bash
+./gradlew test
+```
+
+## Структура проекта
+
+```text
+git-hooks/                  pre-commit hook, скрипты установки и примеры генератора
+src/main/kotlin/.../api/    RagSyncController (events, jobs, reconcile), токен-фильтер, DTO
+src/main/kotlin/.../config/ RagSyncProperties (токен, worker, defaults)
+src/main/kotlin/.../domain/ статусы и типы job
+src/main/kotlin/.../integration/  GitProviderClient и RagPlatformClient + заглушки
+src/main/kotlin/.../persistence/  JPA-сущности и репозитории (job, документы, состояние)
+src/main/kotlin/.../service/      DocumentSyncService, SyncWorker, DocIdService, ContentHashService
+src/main/resources/        application.yaml, профиль postgres, миграции Flyway
+docs/                      архитектура, контракт hook, API, руководство по доработке
 ```
 
 ## Замена заглушек
